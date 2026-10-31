@@ -1,0 +1,1108 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>학교 출입 보안 시뮬레이션</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gaegu:wght@400;700&family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+[hidden]{display:none!important}
+/* Layout: 화면을 세로선으로 반 나눔 — 왼쪽은 현장(지도 + 실내), 오른쪽은 AI 관제 소프트웨어 화면 */
+:root{
+  --bg:#eceff3; --surface:#ffffff; --ink:#151c24; --muted:#58646f; --line:#d3d9e0; --line-strong:#b9c2cc; --divider:#151c24; --chip:#eef1f5;
+  --pen-blue:#2350d8; --pen-red:#d8352b; --ok:#13854f; --warn:#d42a24;
+  --font-ui:'IBM Plex Sans KR', system-ui, -apple-system, 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
+  --font-hand:'Gaegu', 'IBM Plex Sans KR', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
+  --font-mono:'JetBrains Mono', ui-monospace, Menlo, Consolas, monospace;
+  /* 현장 그림 */
+  --s-ground:#f2f5ec; --s-dirt:#ecdcb8; --s-road:#e0e4e8; --s-build:#fbfaf7; --s-ink:#1d232a; --s-wall:#39414a; --s-out:#dadfe5; --s-tree:#a3cc86; --s-window:#bcd3ea;
+  --r-wall:#f3efe7; --r-floor:#dccfb8; --r-line:#6b6257; --r-desk:#bf9467; --r-desk-d:#9c7550; --r-door:#b98a5c; --r-door-open:#3a2b1d;
+  /* AI 소프트웨어 화면 (어두운 관제 화면으로 고정) */
+  --c-bg:#0a111d; --c-panel:#101a2a; --c-deep:#0b1422; --c-line:#22324c; --c-ink:#dbe5f5; --c-dim:#8091ab; --c-ok:#35d27c; --c-warn:#ff4d48; --c-scan:#ffc940;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0e1217; --surface:#161b22; --ink:#e6ebf1; --muted:#9aa6b2; --line:#2a323c; --line-strong:#3a4450; --divider:#c9d2dc; --chip:#202833;
+    --pen-blue:#7896ff; --pen-red:#ff6c61; --ok:#3ccf83; --warn:#ff5a52;
+    --s-ground:#1b231f; --s-dirt:#3b3427; --s-road:#2c3238; --s-build:#272c33; --s-ink:#e4e9ee; --s-wall:#a3aeb9; --s-out:#22272d; --s-tree:#3f5d35; --s-window:#3c5069;
+    --r-wall:#24282e; --r-floor:#352d25; --r-line:#a59a8c; --r-desk:#7a5a3d; --r-desk-d:#5e442d; --r-door:#6d5135; --r-door-open:#120d08;
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0e1217; --surface:#161b22; --ink:#e6ebf1; --muted:#9aa6b2; --line:#2a323c; --line-strong:#3a4450; --divider:#c9d2dc; --chip:#202833;
+  --pen-blue:#7896ff; --pen-red:#ff6c61; --ok:#3ccf83; --warn:#ff5a52;
+  --s-ground:#1b231f; --s-dirt:#3b3427; --s-road:#2c3238; --s-build:#272c33; --s-ink:#e4e9ee; --s-wall:#a3aeb9; --s-out:#22272d; --s-tree:#3f5d35; --s-window:#3c5069;
+  --r-wall:#24282e; --r-floor:#352d25; --r-line:#a59a8c; --r-desk:#7a5a3d; --r-desk-d:#5e442d; --r-door:#6d5135; --r-door-open:#120d08;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--font-ui);font-size:14px;line-height:1.5}
+.app{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);min-height:100%;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.field{padding-block:16px;padding-right:20px;border-right:2px solid var(--divider);display:flex;flex-direction:column;gap:10px;min-width:0}
+.ai{padding-block:16px;padding-left:20px;min-width:0;display:flex}
+@media (max-width:899px){
+  .app{grid-template-columns:minmax(0,1fr)}
+  .field{padding-right:0;border-right:0;border-bottom:2px solid var(--divider);padding-bottom:20px}
+  .ai{padding-left:0;padding-top:20px}
+}
+
+/* 버튼 */
+.controls{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between}
+.runs{display:flex;gap:8px;flex-wrap:wrap}
+.run{font:600 15px/1.2 var(--font-ui);padding:11px 16px;border-radius:10px;border:2px solid var(--ink);background:var(--surface);color:var(--ink);
+  cursor:pointer;display:inline-flex;gap:9px;align-items:center;box-shadow:0 3px 0 var(--ink);transition:transform .08s,box-shadow .08s,opacity .2s}
+.run:hover:not(:disabled){transform:translateY(-1px);box-shadow:0 4px 0 var(--ink)}
+.run:active:not(:disabled){transform:translateY(2px);box-shadow:0 1px 0 var(--ink)}
+.run .sw{width:12px;height:12px;border-radius:50%;flex:none}
+.run-auth .sw{background:var(--ok)}
+.run-out .sw{background:var(--warn)}
+.run:disabled{opacity:.4;cursor:not-allowed}
+.run.is-running{opacity:1;cursor:progress}
+.run.is-running .sw{animation:pulse .8s ease-in-out infinite}
+.pick-wrap{display:inline-flex;align-items:center;gap:8px}
+.pick-label{font-size:12px;color:var(--muted);letter-spacing:.04em}
+.seg{display:inline-flex;border:1.5px solid var(--line-strong);border-radius:9px;overflow:hidden;background:var(--surface)}
+.pick{font:500 14px/1.2 var(--font-ui);padding:8px 14px;background:transparent;border:0;color:var(--muted);cursor:pointer}
+.pick[aria-checked="true"]{background:var(--ink);color:var(--bg)}
+.pick:disabled{cursor:not-allowed;opacity:.55}
+.run:focus-visible,.pick:focus-visible{outline:3px solid var(--pen-blue);outline-offset:2px}
+
+.caption{display:flex;gap:10px;align-items:center;min-height:42px;padding:8px 12px;border-radius:10px;background:var(--surface);border:1px solid var(--line)}
+.step-no{font:600 12px/1.4 var(--font-mono);padding:3px 8px;border-radius:6px;background:var(--chip);color:var(--muted);white-space:nowrap;font-variant-numeric:tabular-nums}
+#stepText{font-weight:500;min-width:0}
+
+/* 현장 그림 */
+.scene{margin:0;border:1.5px solid var(--line-strong);border-radius:12px;overflow:hidden;background:var(--surface);transition:box-shadow .3s,border-color .3s}
+.scene figcaption{display:flex;justify-content:space-between;gap:8px;align-items:center;padding:6px 12px;font-size:13px;font-weight:600;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.scene .chip{font-weight:500;font-size:12px;color:var(--muted);background:var(--chip);padding:2px 8px;border-radius:999px}
+.scene svg{display:block;width:100%;height:auto}
+.scene.alarm{border-color:var(--warn);box-shadow:0 0 0 3px color-mix(in srgb,var(--warn) 28%,transparent)}
+.scene.alarm .chip{color:#fff;background:var(--warn)}
+.scene.spot{animation:spot 1.4s ease-out}
+@keyframes spot{0%{transform:scale(.985);box-shadow:0 0 0 0 color-mix(in srgb,var(--pen-blue) 50%,transparent)}40%{transform:scale(1.01)}100%{transform:scale(1);box-shadow:0 0 0 10px transparent}}
+
+svg .hand{font-family:var(--font-hand);fill:var(--s-ink);font-weight:700}
+svg .lbl{font-size:19px}
+svg .lbl-s{font-size:13px}
+svg .on-ground{stroke:var(--s-ground);stroke-width:4px;paint-order:stroke}
+svg .room-lbl{font-family:var(--font-hand);font-weight:700;font-size:13px;fill:var(--r-line)}
+svg .tag{font:600 9.5px var(--font-ui);fill:var(--s-ink);stroke:var(--s-ground);stroke-width:3px;paint-order:stroke;text-anchor:middle}
+svg .bubble rect,svg .bubble path{fill:#ffffff;stroke:#1d232a;stroke-width:1.3}
+svg .bubble text{font:500 12px var(--font-ui);fill:#1d232a}
+svg .cone{transition:opacity .35s}
+svg .cone.scan{fill:rgba(255,196,40,.30)}
+svg .cone.ok{fill:rgba(30,175,100,.26)}
+svg .cone.bad{fill:rgba(225,40,40,.28)}
+svg .mon-txt{font-family:var(--font-ui);font-weight:700;fill:#fff}
+.arm-write{animation:write .55s ease-in-out infinite alternate}
+.arm-type{animation:type .16s steps(2) infinite}
+.paused{animation-play-state:paused!important}
+@keyframes write{from{transform:translateX(-2px)}to{transform:translate(3px,-1px)}}
+@keyframes type{from{transform:translateY(0)}to{transform:translateY(-2px)}}
+.blink{animation:blink .7s ease-in-out infinite}
+@keyframes blink{50%{opacity:.35}}
+@keyframes pulse{50%{transform:scale(.6);opacity:.6}}
+
+/* AI 소프트웨어 화면 */
+.console{flex:1;display:flex;flex-direction:column;gap:10px;background:var(--c-bg);color:var(--c-ink);border-radius:14px;padding:14px;
+  border:1.5px solid var(--c-line);transition:border-color .3s,box-shadow .3s;min-width:0}
+.console.is-warn{border-color:var(--c-warn);box-shadow:0 0 0 3px rgba(255,77,72,.25),inset 0 0 50px rgba(255,77,72,.12)}
+.c-top{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.c-brand{display:flex;flex-direction:column;gap:1px;min-width:0}
+.c-brand b{font-size:16px;font-weight:700;letter-spacing:-.01em}
+.c-brand span{font:400 11px/1.4 var(--font-mono);color:var(--c-dim);font-variant-numeric:tabular-nums}
+.status{display:inline-flex;gap:8px;align-items:center;padding:7px 16px 7px 12px;border-radius:999px;font-weight:700;font-size:17px;border:1.5px solid}
+.status svg{width:20px;height:20px}
+.status small{font-size:11px;font-weight:500;opacity:.85}
+.status[data-s="safe"]{color:var(--c-ok);border-color:currentColor;background:rgba(53,210,124,.1)}
+.status[data-s="warn"]{color:#fff;background:var(--c-warn);border-color:var(--c-warn);animation:wpulse 1s ease-in-out infinite}
+@keyframes wpulse{50%{box-shadow:0 0 0 7px rgba(255,77,72,.25)}}
+.c-alert{background:var(--c-warn);color:#fff;font-weight:600;padding:8px 12px;border-radius:8px;display:flex;gap:8px;align-items:center;font-size:13px}
+.c-alert svg{width:18px;height:18px;flex:none}
+.c-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.15fr);gap:10px}
+@media (max-width:520px){.c-row{grid-template-columns:minmax(0,1fr)}}
+.c-box{background:var(--c-panel);border:1px solid var(--c-line);border-radius:10px;padding:10px 12px;min-width:0}
+.c-label{display:flex;justify-content:space-between;align-items:baseline;gap:8px;font-size:12px;letter-spacing:.03em;color:var(--c-dim);margin-bottom:8px;font-weight:600;flex-wrap:wrap}
+.c-label em{font-style:normal;font-weight:500;font-size:11px}
+.rec{color:var(--c-warn)}
+
+.cam-view{position:relative;aspect-ratio:4/3;max-height:190px;width:100%;border-radius:6px;overflow:hidden;display:grid;place-items:center;
+  background:repeating-linear-gradient(0deg,rgba(255,255,255,.025) 0 2px,transparent 2px 4px),radial-gradient(circle at 50% 40%,#13223a,#060b14 75%)}
+.cam-idle{color:var(--c-dim);font-size:12px;text-align:center;line-height:1.5}
+.cam-idle small{font-size:11px;opacity:.8}
+.cam-face{width:52%;max-width:120px}
+.cam-face svg{display:block;width:100%;height:auto}
+.cam-face.shred{animation:shred 1s ease-in forwards}
+@keyframes shred{to{filter:blur(10px);opacity:0;transform:scale(1.12)}}
+.bracket{--bc:var(--c-scan);position:absolute;left:21%;right:21%;top:6%;bottom:18%;
+  background:
+   linear-gradient(var(--bc),var(--bc)) left top/16px 2px no-repeat,linear-gradient(var(--bc),var(--bc)) left top/2px 16px no-repeat,
+   linear-gradient(var(--bc),var(--bc)) right top/16px 2px no-repeat,linear-gradient(var(--bc),var(--bc)) right top/2px 16px no-repeat,
+   linear-gradient(var(--bc),var(--bc)) left bottom/16px 2px no-repeat,linear-gradient(var(--bc),var(--bc)) left bottom/2px 16px no-repeat,
+   linear-gradient(var(--bc),var(--bc)) right bottom/16px 2px no-repeat,linear-gradient(var(--bc),var(--bc)) right bottom/2px 16px no-repeat}
+.bracket[data-s="ok"]{--bc:var(--c-ok)} .bracket[data-s="bad"]{--bc:var(--c-warn)} .bracket[data-s="gone"]{--bc:var(--c-dim)}
+.cam-tag{position:absolute;left:8px;bottom:8px;right:8px;text-align:center;font-size:11.5px;font-weight:600;padding:3px 8px;border-radius:5px;background:rgba(0,0,0,.6);color:var(--c-scan)}
+.cam-tag[data-s="ok"]{color:var(--c-ok)} .cam-tag[data-s="bad"]{color:#fff;background:var(--c-warn)} .cam-tag[data-s="gone"]{color:var(--c-dim)}
+
+.pipe ol{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:7px;counter-reset:p}
+.pipe li{display:grid;grid-template-columns:22px minmax(0,1fr) auto;align-items:center;gap:8px;font-size:13px;color:var(--c-dim)}
+.pipe li::before{counter-increment:p;content:counter(p);width:22px;height:22px;border-radius:50%;border:1.5px solid var(--c-line);display:grid;place-items:center;font:600 11px var(--font-mono)}
+.pipe li b{font-weight:600}
+.pipe .p-val{font-size:12px;text-align:right}
+.pipe li[data-state="active"]{color:var(--c-ink)}
+.pipe li[data-state="active"]::before{border-color:var(--c-scan);color:var(--c-scan);box-shadow:0 0 0 3px rgba(255,201,64,.18)}
+.pipe li[data-state="active"] .p-val{color:var(--c-scan)}
+.pipe li[data-state="done"]{color:var(--c-ink)}
+.pipe li[data-state="done"]::before{content:'✓';background:var(--c-ok);border-color:var(--c-ok);color:#06210f}
+.pipe li[data-state="done"] .p-val{color:var(--c-ok)}
+.pipe li[data-state="bad"]{color:var(--c-ink)}
+.pipe li[data-state="bad"]::before{content:'!';background:var(--c-warn);border-color:var(--c-warn);color:#fff}
+.pipe li[data-state="bad"] .p-val{color:#ff8b87}
+
+.db{container-type:inline-size}
+.faces{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:6px}
+@container (max-width:520px){.faces{grid-template-columns:repeat(4,minmax(0,1fr))}}
+.fcard{background:var(--c-deep);border:1.5px solid var(--c-line);border-radius:8px;padding:6px 4px;display:flex;flex-direction:column;align-items:center;gap:3px;transition:border-color .15s,background .2s,opacity .2s}
+.fcard svg{width:100%;max-width:54px;height:auto;display:block}
+.fname{font-size:11px;color:var(--c-ink);white-space:nowrap}
+.fbar{width:100%;height:4px;background:#1b2840;border-radius:2px;overflow:hidden}
+.fbar i{display:block;height:100%;width:0;background:var(--c-dim)}
+.fpct{font:600 11px var(--font-mono);color:var(--c-dim);font-variant-numeric:tabular-nums}
+.fcard.scan{border-color:var(--c-scan);box-shadow:0 0 0 2px rgba(255,201,64,.22)}
+.fcard.scan .fbar i{background:var(--c-scan)}
+.fcard.match{border-color:var(--c-ok);background:rgba(53,210,124,.12)}
+.fcard.match .fbar i{background:var(--c-ok)}
+.fcard.match .fpct{color:var(--c-ok)}
+.fcard.miss{opacity:.55}
+.verdict{margin-top:8px;padding:8px 10px;border-radius:8px;background:var(--c-deep);font-weight:700;font-size:14px;display:flex;justify-content:space-between;align-items:center;gap:4px 10px;flex-wrap:wrap;border:1px solid var(--c-line);color:var(--c-dim)}
+.verdict small{font-weight:500;font-size:12px}
+.verdict[data-v="ok"]{color:var(--c-ok);border-color:rgba(53,210,124,.5)}
+.verdict[data-v="bad"]{color:#fff;background:rgba(255,77,72,.18);border-color:var(--c-warn)}
+
+.data-items{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.ditem{border:1px dashed var(--c-line);border-radius:8px;padding:7px 9px;display:flex;flex-direction:column;gap:1px;transition:background .25s,border-color .25s}
+.ditem b{font-size:12px;color:var(--c-dim);font-weight:600}
+.ditem span{font-size:13px;font-weight:600;color:var(--c-dim)}
+.ditem[data-state="on"]{border-style:solid;border-color:var(--c-ok);background:rgba(53,210,124,.09)}
+.ditem[data-state="on"] span{color:var(--c-ok)}
+
+.log{flex:1;display:flex;flex-direction:column;min-height:120px}
+.log ul{list-style:none;margin:0;padding:0;flex:1;max-height:150px;overflow:auto;display:flex;flex-direction:column;gap:3px;font-size:12px}
+.log li{display:grid;grid-template-columns:auto minmax(0,1fr);gap:8px}
+.log time{font-family:var(--font-mono);color:var(--c-dim);font-variant-numeric:tabular-nums}
+.log li.warn{color:#ff8b87}
+.log li.ok{color:var(--c-ok)}
+
+@media (prefers-reduced-motion:reduce){
+  .arm-write,.arm-type,.blink,.status[data-s="warn"],.scene.spot,.run.is-running .sw{animation:none}
+}
+</style>
+
+</head>
+<body>
+<div class="app" id="app">
+  <section class="field" aria-label="현장 화면">
+    <div class="controls">
+      <div class="runs">
+        <button type="button" class="run run-auth" id="btnAuth"><span class="sw"></span>허가된 사람</button>
+        <button type="button" class="run run-out" id="btnOut"><span class="sw"></span>허가 받지 않은 사람</button>
+      </div>
+      <div class="pick-wrap">
+        <span class="pick-label">입구</span>
+        <div class="seg" role="radiogroup" aria-label="입구 선택">
+          <button type="button" class="pick" id="pickFront" role="radio" aria-checked="true">정문</button>
+          <button type="button" class="pick" id="pickBack" role="radio" aria-checked="false">후문</button>
+        </div>
+      </div>
+    </div>
+    <div class="caption" aria-live="polite"><span class="step-no" id="stepNo">대기</span><span id="stepText">입구를 고른 뒤 인물 버튼을 누르면 끝까지 자동으로 실행됩니다.</span></div>
+
+    <figure class="scene" id="outFig">
+      <figcaption><span id="outTitle">정문 쪽</span><span class="chip" id="outChip">카메라: 정문 기둥</span></figcaption>
+      <svg id="outdoor" viewBox="0 0 600 380" role="img" aria-label="학교 지도와 인물">
+        <defs>
+          <marker id="arrowHead" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0 0 L10 5 L0 10 Z" fill="var(--s-ink)"/>
+          </marker>
+        </defs>
+
+        <!-- 정문 쪽 지도 -->
+        <g id="mapFront">
+          <rect x="0" y="0" width="600" height="380" fill="var(--s-ground)"/>
+          <rect x="550" y="0" width="50" height="380" fill="var(--s-out)"/>
+          <g fill="var(--s-tree)">
+            <circle cx="330" cy="40" r="16"/><circle cx="372" cy="62" r="13"/><circle cx="430" cy="36" r="15"/>
+            <circle cx="498" cy="72" r="14"/><circle cx="470" cy="152" r="13"/><circle cx="518" cy="206" r="11"/>
+            <circle cx="365" cy="335" r="15"/><circle cx="318" cy="362" r="11"/>
+          </g>
+          <!-- 운동장 -->
+          <rect x="18" y="202" width="250" height="164" rx="10" fill="var(--s-dirt)" stroke="var(--s-ink)" stroke-width="1.5"/>
+          <rect x="42" y="222" width="202" height="124" rx="62" fill="none" stroke="#ffffff" stroke-width="2" opacity=".85"/>
+          <line x1="143" y1="222" x2="143" y2="346" stroke="#ffffff" stroke-width="1.5" opacity=".7"/>
+          <text class="hand lbl on-ground" x="143" y="290" text-anchor="middle" style="stroke:var(--s-dirt)">운동장</text>
+          <!-- 스탠드 -->
+          <rect x="28" y="140" width="96" height="44" rx="4" fill="var(--s-ground)" stroke="var(--pen-red)" stroke-width="2"/>
+          <path d="M36 152 H116 M36 162 H116 M36 172 H116" stroke="var(--pen-red)" stroke-width="1.2" opacity=".55"/>
+          <text class="hand lbl on-ground" x="76" y="169" text-anchor="middle" style="fill:var(--pen-red)">스탠드</text>
+          <!-- 길 -->
+          <polyline points="600,290 430,290 300,180 170,140 150,124" fill="none" stroke="var(--pen-blue)" stroke-width="40" stroke-linejoin="round"/>
+          <polyline points="600,290 430,290 300,180 170,140 150,124" fill="none" stroke="var(--s-road)" stroke-width="36" stroke-linejoin="round"/>
+          <text class="hand lbl on-ground" x="326" y="166" text-anchor="middle">길</text>
+          <!-- 본관 -->
+          <rect x="40" y="16" width="220" height="106" rx="3" fill="var(--s-build)" stroke="var(--s-ink)" stroke-width="2"/>
+          <g fill="var(--s-window)" stroke="var(--s-ink)" stroke-width="1">
+            <rect x="54" y="30" width="13" height="14"/><rect x="74" y="30" width="13" height="14"/><rect x="94" y="30" width="13" height="14"/><rect x="114" y="30" width="13" height="14"/>
+            <rect x="173" y="30" width="13" height="14"/><rect x="193" y="30" width="13" height="14"/><rect x="213" y="30" width="13" height="14"/><rect x="233" y="30" width="13" height="14"/>
+            <rect x="54" y="62" width="13" height="14"/><rect x="74" y="62" width="13" height="14"/><rect x="94" y="62" width="13" height="14"/><rect x="114" y="62" width="13" height="14"/>
+            <rect x="173" y="62" width="13" height="14"/><rect x="193" y="62" width="13" height="14"/><rect x="213" y="62" width="13" height="14"/><rect x="233" y="62" width="13" height="14"/>
+          </g>
+          <circle cx="150" cy="40" r="13" fill="var(--s-build)" stroke="var(--s-ink)" stroke-width="2"/>
+          <path d="M150 40 V31 M150 40 L156 44" stroke="var(--s-ink)" stroke-width="1.8" stroke-linecap="round"/>
+          <rect x="133" y="86" width="34" height="36" fill="var(--s-window)" stroke="var(--s-ink)" stroke-width="2"/>
+          <circle cx="137" cy="105" r="1.6" fill="var(--s-ink)"/>
+          <text class="hand lbl" x="78" y="110" text-anchor="middle">본관</text>
+          <!-- 담장과 정문 -->
+          <line x1="550" y1="0" x2="550" y2="262" stroke="var(--s-wall)" stroke-width="5"/>
+          <line x1="550" y1="318" x2="550" y2="380" stroke="var(--s-wall)" stroke-width="5"/>
+          <rect x="543" y="258" width="14" height="12" rx="2" fill="var(--s-wall)"/>
+          <rect x="543" y="312" width="14" height="12" rx="2" fill="var(--s-wall)"/>
+          <text class="hand lbl" x="575" y="236" text-anchor="middle">정문</text>
+          <text class="hand lbl-s" x="575" y="370" text-anchor="middle">학교 밖</text>
+          <!-- 관리소 -->
+          <rect x="440" y="316" width="72" height="46" rx="3" fill="var(--s-build)" stroke="var(--s-ink)" stroke-width="2"/>
+          <rect x="467" y="313" width="18" height="6" fill="var(--s-window)" stroke="var(--s-ink)" stroke-width="1.4"/>
+          <rect x="493" y="325" width="14" height="11" fill="var(--s-window)" stroke="var(--s-ink)" stroke-width="1.2"/>
+          <text class="hand lbl-s" x="469" y="352" text-anchor="middle" style="font-size:15px">관리소</text>
+        </g>
+
+        <!-- 후문 쪽 지도 -->
+        <g id="mapBack" style="display:none">
+          <rect x="0" y="0" width="600" height="380" fill="var(--s-ground)"/>
+          <rect x="0" y="0" width="128" height="134" fill="var(--s-out)"/>
+          <rect x="0" y="266" width="128" height="114" fill="var(--s-out)"/>
+          <g fill="var(--s-build)" stroke="var(--s-ink)" stroke-width="1.3">
+            <path d="M18 98 V70 L42 52 L66 70 V98 Z"/><path d="M76 98 V74 L96 58 L116 74 V98 Z"/>
+            <path d="M18 330 V302 L42 284 L66 302 V330 Z"/><path d="M76 330 V306 L96 290 L116 306 V330 Z"/>
+          </g>
+          <text class="hand lbl-s" x="64" y="124" text-anchor="middle">학교 밖</text>
+          <rect x="0" y="134" width="130" height="132" fill="var(--s-road)"/>
+          <path d="M0 134 H128 M0 266 H128" stroke="var(--s-ink)" stroke-width="1.6"/>
+          <text class="hand lbl on-ground" x="58" y="182" text-anchor="middle" style="stroke:var(--s-road)">길</text>
+          <g fill="var(--s-tree)">
+            <circle cx="228" cy="78" r="16"/><circle cx="300" cy="56" r="13"/><circle cx="382" cy="92" r="15"/>
+            <circle cx="222" cy="318" r="14"/><circle cx="312" cy="302" r="12"/><circle cx="400" cy="332" r="15"/>
+          </g>
+          <rect x="130" y="184" width="340" height="32" fill="var(--s-road)"/>
+          <!-- 담장과 후문 -->
+          <line x1="130" y1="0" x2="130" y2="146" stroke="var(--s-wall)" stroke-width="5"/>
+          <line x1="130" y1="254" x2="130" y2="380" stroke="var(--s-wall)" stroke-width="5"/>
+          <line x1="130" y1="152" x2="130" y2="250" stroke="var(--s-ink)" stroke-width="2.5" stroke-dasharray="9 8"/>
+          <rect x="123" y="140" width="14" height="12" rx="2" fill="var(--s-wall)"/>
+          <rect x="123" y="248" width="14" height="12" rx="2" fill="var(--s-wall)"/>
+          <text class="hand lbl" x="204" y="126" text-anchor="middle">후문</text>
+          <path d="M186 121 Q164 128 148 146" fill="none" stroke="var(--s-ink)" stroke-width="1.8" marker-end="url(#arrowHead)"/>
+          <!-- 학교 건물 -->
+          <rect x="470" y="40" width="118" height="310" rx="3" fill="var(--s-build)" stroke="var(--s-ink)" stroke-width="2"/>
+          <g fill="var(--s-window)" stroke="var(--s-ink)" stroke-width="1">
+            <rect x="486" y="58" width="18" height="16"/><rect x="516" y="58" width="18" height="16"/><rect x="546" y="58" width="18" height="16"/>
+            <rect x="486" y="92" width="18" height="16"/><rect x="516" y="92" width="18" height="16"/><rect x="546" y="92" width="18" height="16"/>
+            <rect x="486" y="276" width="18" height="16"/><rect x="516" y="276" width="18" height="16"/><rect x="546" y="276" width="18" height="16"/>
+            <rect x="486" y="310" width="18" height="16"/><rect x="516" y="310" width="18" height="16"/><rect x="546" y="310" width="18" height="16"/>
+          </g>
+          <text class="hand" x="530" y="160" text-anchor="middle" style="font-size:24px">학교</text>
+          <g id="staffWin">
+            <rect x="486" y="228" width="88" height="30" rx="3" fill="var(--s-window)" stroke="var(--s-ink)" stroke-width="1.4"/>
+            <text class="hand lbl-s" x="530" y="248" text-anchor="middle">교무실</text>
+          </g>
+          <rect x="465" y="184" width="10" height="32" fill="var(--s-window)" stroke="var(--s-ink)" stroke-width="1.6"/>
+        </g>
+
+        <!-- 카메라 -->
+        <g id="camFront">
+          <circle cx="551" cy="258" r="3" fill="var(--s-wall)"/>
+          <g id="camFrontRig">
+            <polygon class="cone scan" points="8,0 150,-30 150,30" style="opacity:0"/>
+            <rect x="-6" y="-5" width="17" height="10" rx="2" fill="#2b3139" stroke="#0e1216" stroke-width=".8"/>
+            <rect x="10" y="-3.5" width="5" height="7" rx="1" fill="#11161c"/>
+            <circle class="cam-led" cx="-2" cy="-2" r="1.6" fill="#33d27b"/>
+          </g>
+        </g>
+        <g id="camBack" style="display:none">
+          <circle cx="131" cy="141" r="3" fill="var(--s-wall)"/>
+          <g id="camBackRig">
+            <polygon class="cone scan" points="8,0 150,-30 150,30" style="opacity:0"/>
+            <rect x="-6" y="-5" width="17" height="10" rx="2" fill="#2b3139" stroke="#0e1216" stroke-width=".8"/>
+            <rect x="10" y="-3.5" width="5" height="7" rx="1" fill="#11161c"/>
+            <circle class="cam-led" cx="-2" cy="-2" r="1.6" fill="#33d27b"/>
+          </g>
+        </g>
+
+        <g id="actors"></g>
+        <g id="bubbles"></g>
+      </svg>
+    </figure>
+
+    <figure class="scene" id="inFig">
+      <figcaption><span id="inTitle">관리소 내부</span><span class="chip" id="inChip">관리자: 업무 일지 작성 중</span></figcaption>
+      <svg id="indoor" viewBox="0 0 600 200" role="img" aria-label="실내 모습">
+        <g id="roomGuard"></g>
+        <g id="roomStaff" style="display:none"></g>
+      </svg>
+    </figure>
+  </section>
+
+  <section class="ai" aria-label="AI 소프트웨어 화면">
+    <div class="console" id="console">
+      <div class="c-top">
+        <div class="c-brand"><b>교내 출입 보안 AI</b><span id="clock">시각 인공지능 얼굴 대조</span></div>
+        <div class="status" id="status" data-s="safe" role="status">
+          <svg id="stIcon" viewBox="0 0 24 24" aria-hidden="true"></svg>
+          <span><span id="stText">안전</span> <small id="stSub">평상시</small></span>
+        </div>
+      </div>
+      <div class="c-alert" id="alertbar" hidden>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5 L23 21.5 H1 Z" fill="#fff"/><path d="M12 9 V14.5" stroke="#ff4d48" stroke-width="2.4" stroke-linecap="round"/><circle cx="12" cy="18" r="1.4" fill="#ff4d48"/></svg>
+        <span id="alertText">경고</span>
+      </div>
+      <div class="c-row">
+        <div class="c-box">
+          <div class="c-label"><span><span class="rec">●</span> <span id="camName">CAM-1 · 정문</span></span><em>실시간</em></div>
+          <div class="cam-view" id="camView"></div>
+        </div>
+        <div class="c-box pipe">
+          <div class="c-label"><span>처리 단계</span></div>
+          <ol>
+            <li id="p-detect"><b>얼굴 감지</b><span class="p-val">대기</span></li>
+            <li id="p-compare"><b>허가 목록 대조</b><span class="p-val">대기</span></li>
+            <li id="p-judge"><b>판정</b><span class="p-val">대기</span></li>
+            <li id="p-action"><b>조치</b><span class="p-val">대기</span></li>
+            <li id="p-discard"><b>얼굴 정보 폐기</b><span class="p-val">대기</span></li>
+          </ol>
+        </div>
+      </div>
+      <div class="c-box db">
+        <div class="c-label"><span>허가된 사람 얼굴 목록</span><em>8명 · 일치 기준 80%</em></div>
+        <div class="faces" id="faces"></div>
+        <div class="verdict" id="verdict" data-v="wait"><span id="vMain">판정 대기</span><small id="vSub"></small></div>
+      </div>
+      <div class="c-box">
+        <div class="c-label"><span>방금 인식한 얼굴 정보 처리</span><em>허가 목록은 그대로 유지</em></div>
+        <div class="data-items">
+          <div class="ditem" id="d-store" data-state="idle"><b>저장</b><span>대기</span></div>
+          <div class="ditem" id="d-learn" data-state="idle"><b>학습</b><span>대기</span></div>
+          <div class="ditem" id="d-drop" data-state="idle"><b>폐기</b><span>대기</span></div>
+        </div>
+      </div>
+      <div class="c-box log">
+        <div class="c-label"><span>이벤트 기록</span><em>최신 순</em></div>
+        <ul id="log"></ul>
+      </div>
+    </div>
+  </section>
+</div>
+
+<script>
+(() => {
+'use strict';
+const SPEED = window.__SIM_SPEED || 1;
+const NS = 'http://www.w3.org/2000/svg';
+const $ = id => document.getElementById(id);
+const sleep = ms => new Promise(r => setTimeout(r, ms / SPEED));
+const tween = (ms, fn) => new Promise(res => {
+  const dur = ms / SPEED, t0 = performance.now();
+  const f = now => { const t = dur <= 0 ? 1 : Math.min(1, (now - t0) / dur); fn(t); if (t < 1) requestAnimationFrame(f); else res(); };
+  requestAnimationFrame(f);
+});
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+
+/* ---------- 얼굴 그림 (정면) ---------- */
+const K = '#1b222b';
+function faceSVG(p){
+  const hc = p.hc; let back = '', front = '';
+  switch (p.hair){
+    case 'short': front = `<path d="M15 31 Q14 11 32 11 Q50 11 49 31 Q45 20 32 20 Q19 20 15 31Z" fill="${hc}"/>`; break;
+    case 'side':  front = `<path d="M15 33 Q13 9 33 10 Q51 11 49 30 Q46 19 36 19 Q26 22 15 33Z" fill="${hc}"/>`; break;
+    case 'bun':   front = `<circle cx="32" cy="9" r="6.5" fill="${hc}"/><path d="M15 31 Q14 12 32 12 Q50 12 49 31 Q45 21 32 21 Q19 21 15 31Z" fill="${hc}"/>`; break;
+    case 'long':  back = `<path d="M12 32 Q11 9 32 9 Q53 9 52 32 V58 H43 V30 H21 V58 H12Z" fill="${hc}"/>`;
+                  front = `<path d="M15 30 Q15 12 32 12 Q49 12 49 30 Q44 21 32 21 Q20 21 15 30Z" fill="${hc}"/>`; break;
+    case 'bob':   back = `<path d="M13 32 Q12 10 32 10 Q52 10 51 32 V47 H44 V30 H20 V47 H13Z" fill="${hc}"/>`;
+                  front = `<path d="M15 28 Q16 12 32 12 Q48 12 49 28 Z" fill="${hc}"/>`; break;
+    case 'curly': front = [[18,24,6],[24,16,7],[32,13,7.5],[40,16,7],[46,24,6],[16,31,4.5],[48,31,4.5]].map(c=>`<circle cx="${c[0]}" cy="${c[1]}" r="${c[2]}" fill="${hc}"/>`).join(''); break;
+    case 'buzz':  front = `<path d="M16 28 Q17 14 32 14 Q47 14 48 28 Q40 21 32 21 Q24 21 16 28Z" fill="${hc}"/>`; break;
+    case 'cap':   front = `<path d="M16 30 Q15 24 17 22 L47 22 Q49 24 48 30 Q40 26 32 26 Q24 26 16 30Z" fill="${hc}"/>`; break;
+  }
+  const brows = `<path d="M21 29.5 h7 M36 29.5 h7" stroke="${p.hair==='buzz'?'#6c7078':hc}" stroke-width="1.7" stroke-linecap="round"/>`;
+  const mouth = p.mouth === 'smile' ? `<path d="M26 45 Q32 50 38 45" fill="none" stroke="${K}" stroke-width="1.6" stroke-linecap="round"/>`
+                                    : `<path d="M27.5 46.5 H36.5" stroke="${K}" stroke-width="1.6" stroke-linecap="round"/>`;
+  const glasses = p.glasses ? `<g fill="none" stroke="#202833" stroke-width="1.6"><circle cx="25" cy="35" r="5.2"/><circle cx="39" cy="35" r="5.2"/><path d="M30.2 35 H33.8"/></g>` : '';
+  const stache = p.stache ? `<path d="M25.5 43.2 Q32 40 38.5 43.2 Q32 45 25.5 43.2Z" fill="${hc}"/>` : '';
+  const beard = p.beard ? `<path d="M16 37 Q16.5 55 32 55 Q47.5 55 48 37 Q46 47 39 48.5 Q32 50.5 25 48.5 Q18 47 16 37Z" fill="${hc}" opacity=".92"/><path d="M25.5 43.6 Q32 40.8 38.5 43.6 Q32 45.4 25.5 43.6Z" fill="${hc}"/>` : '';
+  const cap = p.cap ? `<path d="M14 26 Q14 8 32 8 Q50 8 50 26Z" fill="${p.cap}" stroke="${K}" stroke-width="1"/><rect x="10" y="23.5" width="44" height="6" rx="3" fill="${p.cap}" stroke="${K}" stroke-width="1"/><circle cx="32" cy="9" r="1.6" fill="${K}"/>` : '';
+  return `<svg viewBox="0 0 64 64" aria-hidden="true">
+    <path d="M5 64 Q9 52 32 53 Q55 52 59 64Z" fill="${p.shirt}"/>
+    <rect x="27" y="46" width="10" height="9" fill="${p.skin}"/>
+    ${back}
+    <ellipse cx="16" cy="36" rx="3" ry="4" fill="${p.skin}" stroke="${K}" stroke-width="1"/>
+    <ellipse cx="48" cy="36" rx="3" ry="4" fill="${p.skin}" stroke="${K}" stroke-width="1"/>
+    <ellipse cx="32" cy="34" rx="16" ry="18.5" fill="${p.skin}" stroke="${K}" stroke-width="1.2"/>
+    ${beard}${front}${brows}
+    <circle cx="25" cy="35" r="2" fill="${K}"/><circle cx="39" cy="35" r="2" fill="${K}"/>
+    <path d="M32 37 Q30 41.5 33 42" fill="none" stroke="${K}" stroke-width="1.1" stroke-linecap="round"/>
+    ${mouth}${stache}${glasses}${cap}
+  </svg>`;
+}
+
+/* 허가된 사람 목록 (실명·실제 사진 없이 단순화한 얼굴) */
+const UNIFORM = '#2b3f86';
+const PEOPLE = [
+  {name:'학생 1', skin:'#f3d2b3', hair:'short', hc:'#27211e', shirt:UNIFORM, mouth:'flat'},
+  {name:'학생 2', skin:'#f6dcc4', hair:'long',  hc:'#4a3326', shirt:UNIFORM, mouth:'smile'},
+  {name:'학생 3', skin:'#e9bf98', hair:'side',  hc:'#1d1918', shirt:UNIFORM, mouth:'smile', glasses:true},
+  {name:'학생 4', skin:'#f3d2b3', hair:'bun',   hc:'#3a2a22', shirt:UNIFORM, mouth:'flat'},
+  {name:'학생 5', skin:'#dcab84', hair:'curly', hc:'#2c221d', shirt:UNIFORM, mouth:'smile'},
+  {name:'교사 1', skin:'#f6dcc4', hair:'buzz',  hc:'#8d929a', shirt:'#55697c', mouth:'flat', glasses:true},
+  {name:'교사 2', skin:'#e9bf98', hair:'bob',   hc:'#27211e', shirt:'#9b4d2c', mouth:'smile'},
+  {name:'교직원 1', skin:'#dcab84', hair:'short', hc:'#5b3e2b', shirt:'#4c6a58', mouth:'flat', stache:true},
+];
+const OUTSIDER = {name:'미등록', skin:'#e2b48c', hair:'cap', hc:'#3a2c22', cap:'#5f6d2c', shirt:'#8a5a2b', mouth:'flat', beard:true};
+const SIM_AUTH = [34, 22, 97, 51, 18, 43, 27, 31];
+const SIM_OUT  = [29, 21, 38, 17, 26, 35, 23, 33];
+const TH = 80;
+
+/* ---------- 현장 인물 (작은 정면 그림) ---------- */
+function figSVG(o){
+  const head = o.cap
+    ? `<path d="M-7 -26 Q-6.5 -33.5 0 -33.5 Q6.5 -33.5 7 -26 Z" fill="${o.cap}" stroke="#1d232a" stroke-width="1"/><rect x="-9" y="-27.6" width="18" height="2.8" rx="1.4" fill="${o.cap}" stroke="#1d232a" stroke-width=".8"/>`
+    : `<path d="M-6.7 -25 Q-7 -32 0 -32 Q7 -32 6.7 -25 Q0 -28.5 -6.7 -25Z" fill="${o.hc}"/>`;
+  return `<g class="fig-body">
+    <ellipse cx="0" cy="1" rx="8" ry="2.6" fill="#000" opacity=".2"/>
+    <rect x="-5" y="-6" width="4" height="7" rx="1.5" fill="${o.pants}"/>
+    <rect x="1" y="-6" width="4" height="7" rx="1.5" fill="${o.pants}"/>
+    <rect x="-7.5" y="-19" width="15" height="15" rx="5" fill="${o.body}" stroke="#1d232a" stroke-width="1.1"/>
+    <circle cx="0" cy="-25" r="6.5" fill="${o.skin}" stroke="#1d232a" stroke-width="1.1"/>
+    ${head}</g>
+    <text class="tag" x="0" y="13">${o.tag}</text>`;
+}
+const FIG = {
+  auth:    {tag:'학생 3', body:UNIFORM, pants:'#2d3340', skin:'#e9bf98', hc:'#1d1918'},
+  out:     {tag:'외부인', body:'#8a5a2b', pants:'#3d3a35', skin:'#e2b48c', cap:'#5f6d2c'},
+  guard:   {tag:'관리자', body:'#2f5d50', pants:'#26343f', skin:'#efc6a1', cap:'#1f2a44'},
+  teacher: {tag:'선생님', body:'#3f8f86', pants:'#303742', skin:'#efc6a1', hc:'#2a2522'},
+};
+
+/* ---------- 움직이는 대상 ---------- */
+const actors = [];
+class Actor {
+  constructor(g, scale = 1, flip = false){ this.g = g; this.s = scale; this.flip = flip; this.x = 0; this.y = 0; this.dir = 1; this.walking = false; this.phase = 0; this.hide(); actors.push(this); }
+  at(x, y){ this.x = x; this.y = y; this.render(); return this; }
+  show(){ this.g.style.display = ''; this.visible = true; return this; }
+  hide(){ this.g.style.display = 'none'; this.visible = false; this.walking = false; return this; }
+  face(d){ this.dir = d; this.render(); }
+  render(){
+    const bob = this.walking ? -Math.abs(Math.sin(this.phase)) * 2.2 : 0;
+    const sx = this.flip ? this.dir * this.s : this.s;
+    this.g.setAttribute('transform', `translate(${this.x.toFixed(1)},${(this.y + bob).toFixed(1)}) scale(${sx},${this.s})`);
+  }
+  async walk(points, speed){
+    this.walking = true;
+    for (const [x, y] of points){
+      const x0 = this.x, y0 = this.y, d = Math.hypot(x - x0, y - y0);
+      if (Math.abs(x - x0) > 0.5) this.dir = x < x0 ? -1 : 1;
+      await tween(d / speed * 1000, t => { this.x = x0 + (x - x0) * t; this.y = y0 + (y - y0) * t; });
+    }
+    this.walking = false; this.render();
+  }
+}
+function mkActor(parent, html, scale, flip){
+  const g = document.createElementNS(NS, 'g'); g.innerHTML = html; parent.appendChild(g);
+  return new Actor(g, scale, flip);
+}
+
+/* ---------- 카메라 ---------- */
+class Cam {
+  constructor(rig, mx, my, idle){ this.rig = rig; this.cone = rig.querySelector('.cone'); this.led = rig.querySelector('.cam-led'); this.mx = mx; this.my = my; this.idle = idle; this.angle = idle; this.target = null; this.render(); }
+  watch(a){ this.target = a; this.cone.style.opacity = 1; this.mode('scan'); }
+  unwatch(){ this.target = null; this.cone.style.opacity = 0; }
+  mode(m){ this.cone.setAttribute('class', 'cone ' + m); this.led.setAttribute('fill', m === 'bad' ? '#ff4d48' : m === 'scan' ? '#ffc940' : '#33d27b'); }
+  reset(){ this.unwatch(); this.mode('scan'); this.led.setAttribute('fill', '#33d27b'); this.angle = this.idle; this.render(); }
+  update(){
+    let goal = this.idle;
+    if (this.target){
+      const tx = this.target.x, ty = this.target.y - 30;
+      goal = Math.atan2(ty - this.my, tx - this.mx) * 180 / Math.PI;
+      const L = Math.max(40, Math.hypot(tx - this.mx, ty - this.my) + 14), w = Math.max(14, L * 0.2);
+      this.cone.setAttribute('points', `8,0 ${L.toFixed(0)},${(-w).toFixed(0)} ${L.toFixed(0)},${w.toFixed(0)}`);
+    }
+    const d = ((goal - this.angle + 540) % 360) - 180;
+    this.angle += d * 0.14; this.render();
+  }
+  render(){ this.rig.setAttribute('transform', `translate(${this.mx},${this.my}) rotate(${this.angle.toFixed(1)})`); }
+}
+
+/* ---------- 말풍선 ---------- */
+const bubbles = new Set();
+async function say(actor, text, ms){
+  const layer = $('bubbles');
+  const g = document.createElementNS(NS, 'g'); g.setAttribute('class', 'bubble');
+  g.innerHTML = `<path d="M-5 10 L0 18 L5 10 Z"/><rect rx="8" ry="8"/><text text-anchor="middle" y="4">${text}</text>`;
+  layer.appendChild(g);
+  const t = g.querySelector('text'), r = g.querySelector('rect'), tail = g.querySelector('path');
+  const w = t.getComputedTextLength() + 20, h = 26;
+  r.setAttribute('x', -w / 2); r.setAttribute('y', -h / 2); r.setAttribute('width', w); r.setAttribute('height', h);
+  const b = { update(){
+    const x = clamp(actor.x, w / 2 + 4, 596 - w / 2), y = actor.y - 58;
+    g.setAttribute('transform', `translate(${x.toFixed(1)},${y.toFixed(1)})`);
+    const tx = clamp(actor.x - x, -w / 2 + 10, w / 2 - 10);
+    tail.setAttribute('d', `M${tx - 6} ${h / 2 - 1} L${tx} ${h / 2 + 8} L${tx + 6} ${h / 2 - 1} Z`);
+  }};
+  b.update(); bubbles.add(b);
+  await sleep(ms);
+  bubbles.delete(b); g.remove();
+}
+function clearBubbles(){ bubbles.clear(); $('bubbles').innerHTML = ''; }
+
+/* ---------- 실내 그림 ---------- */
+function hairProfile(hx, hy, o){
+  if (o.cap) return `<path d="M${hx-13} ${hy-3} Q${hx-12} ${hy-17} ${hx+1} ${hy-16} Q${hx+12} ${hy-15} ${hx+13} ${hy-6} Z" fill="${o.cap}"/><path d="M${hx+6} ${hy-7} L${hx+21} ${hy-4} L${hx+6} ${hy-3} Z" fill="#141a22"/><rect x="${hx-3}" y="${hy-14}" width="5" height="5" rx="1" fill="#e7c76a"/>`;
+  let s = `<path d="M${hx-14} ${hy+5} Q${hx-15} ${hy-14} ${hx+1} ${hy-14} Q${hx+12} ${hy-13} ${hx+13} ${hy-4} Q${hx+3} ${hy-9} ${hx-4} ${hy-4} Q${hx-7} ${hy+2} ${hx-8} ${hy+9} Z" fill="${o.hc}"/>`;
+  if (o.long) s = `<rect x="${hx-15}" y="${hy-6}" width="12" height="30" rx="6" fill="${o.hc}"/>` + s;
+  if (o.bun) s += `<circle cx="${hx-12}" cy="${hy-11}" r="6" fill="${o.hc}"/>`;
+  if (o.glasses) s += `<circle cx="${hx+7}" cy="${hy-1}" r="4" fill="none" stroke="#202833" stroke-width="1.4"/>`;
+  return s;
+}
+function chairSVG(x0){
+  return `<rect x="${x0+2}" y="72" width="6" height="52" rx="2" fill="#4a505a"/><rect x="${x0+4}" y="118" width="42" height="6" rx="2" fill="#4a505a"/>
+          <rect x="${x0+22}" y="124" width="5" height="34" fill="#4a505a"/><rect x="${x0+10}" y="157" width="30" height="3" rx="1.5" fill="#4a505a"/>`;
+}
+function seatedSVG(x0, o, armId, armCls){
+  const hx = x0 + 28, hy = 64;
+  return `<rect x="${x0+22}" y="113" width="36" height="11" rx="5" fill="${o.pants}"/>
+    <rect x="${x0+50}" y="117" width="10" height="41" rx="4" fill="${o.pants}"/>
+    <rect x="${x0+48}" y="155" width="18" height="6" rx="3" fill="#20242a"/>
+    <rect x="${x0+12}" y="78" width="28" height="44" rx="9" fill="${o.body}"/>
+    <circle cx="${hx}" cy="${hy}" r="13" fill="${o.skin}"/>
+    ${hairProfile(hx, hy, o)}
+    <circle cx="${hx+7}" cy="${hy-1}" r="1.7" fill="#1b222b"/>
+    <g ${armId ? `id="${armId}"` : ''} class="${armCls}"><path d="M${x0+28} 90 L${x0+60} 109" stroke="${o.body}" stroke-width="8" stroke-linecap="round"/><circle cx="${x0+62}" cy="110" r="4.5" fill="${o.skin}"/></g>`;
+}
+function standingSVG(o){
+  return `<ellipse cx="0" cy="0" rx="16" ry="3" fill="#000" opacity=".15"/>
+    <rect x="-10" y="-46" width="8" height="44" rx="3" fill="${o.pants}"/><rect x="2" y="-46" width="8" height="44" rx="3" fill="${o.pants}"/>
+    <rect x="-11" y="-5" width="12" height="5" rx="2" fill="#20242a"/><rect x="2" y="-5" width="13" height="5" rx="2" fill="#20242a"/>
+    <rect x="-14" y="-94" width="28" height="52" rx="9" fill="${o.body}"/>
+    <rect x="-3" y="-88" width="9" height="40" rx="4.5" fill="${o.body}" stroke="rgba(0,0,0,.2)"/>
+    <circle cx="0" cy="-106" r="13" fill="${o.skin}"/>
+    ${hairProfile(0, -106, o)}
+    <circle cx="7" cy="-107" r="1.7" fill="#1b222b"/>`;
+}
+function deskSVG(x1, x2){
+  return `<rect x="${x1}" y="118" width="${x2-x1}" height="8" rx="2" fill="var(--r-desk)"/>
+    <rect x="${x1+6}" y="126" width="6" height="34" fill="var(--r-desk-d)"/><rect x="${x2-12}" y="126" width="6" height="34" fill="var(--r-desk-d)"/>`;
+}
+function monitorSVG(cx, w, h, p, where){
+  const x = cx - w / 2, y = 110 - h, big = w >= 150;
+  const fs1 = big ? 14 : 11, triS = big ? 11 : 8;
+  const ty = y + (big ? 20 : 15);
+  const tiles = [0,1,2,3].map(i => `<rect x="${x + 10 + (i%2)*((w-28)/2+4)}" y="${y + 22 + Math.floor(i/2)*((h-44)/2+4)}" width="${(w-28)/2}" height="${(h-44)/2}" rx="2" fill="#16294a"/>`).join('');
+  const normal = p ? `<g id="${p}N">` : '<g>';
+  return `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="5" fill="#2a2f37"/>
+    ${normal}<rect x="${x+4}" y="${y+4}" width="${w-8}" height="${h-8}" rx="2" fill="#0f1d36"/>
+      <text x="${x+10}" y="${y+16}" font-size="${big?9:8}" fill="#8fb3ff" font-family="IBM Plex Sans KR, sans-serif">보안 AI 관제</text>
+      ${tiles}
+      <circle cx="${x+w-34}" cy="${y+13}" r="3" fill="#35d27c"/><text x="${x+w-27}" y="${y+16}" font-size="${big?9:8}" fill="#35d27c" font-family="IBM Plex Sans KR, sans-serif">안전</text>
+    </g>
+    ${p ? `<g id="${p}A" style="display:none">
+      <rect x="${x+4}" y="${y+4}" width="${w-8}" height="${h-8}" rx="2" fill="#d92a26"/>
+      <g class="blink"><path d="M${cx} ${ty-triS} L${cx+triS*1.15} ${ty+triS*0.9} L${cx-triS*1.15} ${ty+triS*0.9} Z" fill="#fff"/>
+      <path d="M${cx} ${ty-triS*0.35} V${ty+triS*0.3}" stroke="#d92a26" stroke-width="${big?2.4:1.8}" stroke-linecap="round"/><circle cx="${cx}" cy="${ty+triS*0.62}" r="${big?1.4:1.1}" fill="#d92a26"/></g>
+      <text class="mon-txt" x="${cx}" y="${ty + (big?28:22)}" text-anchor="middle" font-size="${fs1}">신원 불명의 인물이</text>
+      <text class="mon-txt" x="${cx}" y="${ty + (big?45:36)}" text-anchor="middle" font-size="${fs1}">접근 중</text>
+      <text id="${p}In" x="${x+10}" y="${y+h-9}" font-size="${big?10:8.5}" fill="#ffe1df" font-family="JetBrains Mono, IBM Plex Sans KR, monospace">${where}</text>
+    </g>` : ''}
+    <rect x="${cx-6}" y="110" width="12" height="8" fill="#2a2f37"/>`;
+}
+
+/* 교무실 왼쪽 두 선생님의 개인 업무 화면 */
+function workMonitorSVG(cx, w, h, kind){
+  const x = cx - w / 2, y = 110 - h, sx = x + 4, sy = y + 4, sw = w - 8, sh = h - 8;
+  const F = 'font-family="IBM Plex Sans KR, sans-serif"';
+  let screen = '';
+  if (kind === 0){
+    /* 수행평가 채점표 */
+    const rows = [['번호','과제','점수'],['1','제출','18'],['2','제출','20'],['3','미제출','—'],['4','제출','17']];
+    const cw = [16, 38, 34], rh = 8, gy = sy + 12;
+    rows.forEach((r, ri) => {
+      let cx2 = sx + 2;
+      r.forEach((c, ci) => {
+        screen += `<rect x="${cx2}" y="${gy + ri * rh}" width="${cw[ci]}" height="${rh}" fill="${ri === 0 ? '#d7eedf' : '#ffffff'}" stroke="#c9d3cc" stroke-width=".5"/>`;
+        screen += `<text x="${cx2 + cw[ci] / 2}" y="${gy + ri * rh + 5.8}" text-anchor="middle" font-size="5.6" fill="${ri === 0 ? '#1f5d3b' : (c === '미제출' ? '#c0392b' : '#2b333b')}" ${F}>${c}</text>`;
+        cx2 += cw[ci];
+      });
+    });
+    screen = `<rect x="${sx}" y="${sy}" width="${sw}" height="${sh}" rx="2" fill="#f4f7f5"/>
+      <rect x="${sx}" y="${sy}" width="${sw}" height="9" rx="2" fill="#1f7a4d"/>
+      <text x="${sx + 4}" y="${sy + 6.6}" font-size="6" fill="#fff" ${F}>2학년 수행평가 채점표</text>${screen}`;
+  } else {
+    /* 과학 수업 자료 만들기 */
+    const thumbs = [0, 1, 2].map(i => `<rect x="${sx + 3}" y="${sy + 12 + i * 13}" width="16" height="10" fill="#fff" stroke="${i === 1 ? '#c4552a' : '#c9c9c9'}" stroke-width="${i === 1 ? 1 : .5}"/>`).join('');
+    const mx = sx + 23, my = sy + 12;
+    screen = `<rect x="${sx}" y="${sy}" width="${sw}" height="${sh}" rx="2" fill="#e9e9ec"/>
+      <rect x="${sx}" y="${sy}" width="${sw}" height="9" rx="2" fill="#c4552a"/>
+      <text x="${sx + 4}" y="${sy + 6.6}" font-size="6" fill="#fff" ${F}>과학 수업 자료 만들기</text>
+      ${thumbs}
+      <rect x="${mx}" y="${my}" width="66" height="40" fill="#fff" stroke="#c9c9c9" stroke-width=".5"/>
+      <text x="${mx + 33}" y="${my + 8}" text-anchor="middle" font-size="6.4" font-weight="700" fill="#2b333b" ${F}>광합성의 원리</text>
+      <circle cx="${mx + 10}" cy="${my + 21}" r="4.5" fill="#f5b82e"/>
+      <path d="M${mx + 16} ${my + 22} L${mx + 26} ${my + 26}" stroke="#d08a1c" stroke-width="1"/>
+      <path d="M${mx + 26} ${my + 26} l-3.2 -0.3 l1.4 -2.4 Z" fill="#d08a1c"/>
+      <ellipse cx="${mx + 34}" cy="${my + 28}" rx="8" ry="4.2" fill="#4caf50" transform="rotate(-20 ${mx + 34} ${my + 28})"/>
+      <rect x="${mx + 46}" y="${my + 17}" width="16" height="1.8" rx=".9" fill="#9aa3ad"/>
+      <rect x="${mx + 46}" y="${my + 23}" width="13" height="1.8" rx=".9" fill="#9aa3ad"/>
+      <rect x="${mx + 46}" y="${my + 29}" width="15" height="1.8" rx=".9" fill="#9aa3ad"/>
+      <text x="${mx + 33}" y="${my + 38}" text-anchor="middle" font-size="4.6" fill="#6b7480" ${F}>빛 + 물 + 이산화 탄소</text>`;
+  }
+  return `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="5" fill="#2a2f37"/>${screen}
+    <rect x="${cx - 6}" y="110" width="12" height="8" fill="#2a2f37"/>`;
+}
+
+const GUARD = {body:'#2f5d50', pants:'#26343f', skin:'#efc6a1', cap:'#1f2a44', hc:'#2a2522'};
+const TEACHERS = [
+  {body:'#6d7fb0', pants:'#3a3f4a', skin:'#f3d2b3', hc:'#27211e', glasses:true, arm:'arm-type'},
+  {body:'#c0794a', pants:'#4a3b33', skin:'#e9bf98', hc:'#3a2a22', long:true, arm:'arm-write'},
+  {body:'#3f8f86', pants:'#303742', skin:'#efc6a1', hc:'#2a2522', arm:'arm-type'},
+];
+
+function buildRooms(){
+  /* 관리소 내부 */
+  $('roomGuard').innerHTML = `
+    <rect width="600" height="200" fill="var(--r-wall)"/>
+    <rect y="160" width="600" height="40" fill="var(--r-floor)"/>
+    <line x1="0" y1="160" x2="600" y2="160" stroke="var(--r-line)" stroke-width="1.5"/>
+    <rect x="30" y="24" width="120" height="86" rx="3" fill="#cfe3f5" stroke="var(--r-line)" stroke-width="2"/>
+    <rect x="32" y="80" width="116" height="28" fill="#c9d8b4"/>
+    <g stroke="#59616b" stroke-width="3"><line x1="104" y1="58" x2="104" y2="104"/><line x1="116" y1="58" x2="116" y2="104"/><line x1="128" y1="58" x2="128" y2="104"/><line x1="100" y1="64" x2="140" y2="64"/></g>
+    <line x1="90" y1="24" x2="90" y2="110" stroke="var(--r-line)" stroke-width="2"/>
+    <text class="room-lbl" x="90" y="128" text-anchor="middle">창밖: 정문</text>
+    <g id="gRig">
+      ${chairSVG(170)}
+      <g id="gSeat">${seatedSVG(170, GUARD, 'gArm', 'arm-write')}
+        <g id="gExcl" style="display:none"><circle cx="198" cy="36" r="10" fill="#e5322d"/><text x="198" y="41" text-anchor="middle" fill="#fff" font-weight="700" font-size="14" font-family="IBM Plex Sans KR, sans-serif">!</text></g>
+      </g>
+    </g>
+    ${deskSVG(218, 470)}
+    <rect x="224" y="114" width="40" height="4" rx="1" fill="#f7f4ec" stroke="var(--r-line)" stroke-width=".8"/>
+    <rect x="300" y="113" width="52" height="5" rx="1.5" fill="#3a3f47"/>
+    ${monitorSVG(384, 168, 96, 'gm', '정문 CAM-1')}
+    <rect id="gDoor" x="522" y="36" width="60" height="124" fill="var(--r-door)" stroke="var(--r-line)" stroke-width="2"/>
+    <circle cx="532" cy="100" r="3" fill="#e7c76a"/>
+    <text class="room-lbl" x="552" y="28" text-anchor="middle">출입문</text>
+    <g id="gStandLayer"></g>`;
+
+  /* 교무실 내부 */
+  const xs = [20, 185, 350];
+  let desks = '';
+  TEACHERS.forEach((o, i) => {
+    const x0 = xs[i], main = i === 2;
+    desks += `${chairSVG(x0)}<g id="t${i}Seat">${seatedSVG(x0, o, main ? 't2Arm' : '', o.arm)}${main ? `<g id="tExcl" style="display:none"><circle cx="${x0+28}" cy="36" r="10" fill="#e5322d"/><text x="${x0+28}" y="41" text-anchor="middle" fill="#fff" font-weight="700" font-size="14" font-family="IBM Plex Sans KR, sans-serif">!</text></g>` : ''}</g>
+      ${deskSVG(x0 + 48, x0 + 168)}
+      <rect x="${x0+56}" y="113" width="40" height="5" rx="1.5" fill="#3a3f47"/>
+      ${main ? monitorSVG(x0 + 110, 128, 78, 'tm', '후문 CAM-2') : workMonitorSVG(x0 + 118, 100, 62, i)}`;
+  });
+  $('roomStaff').innerHTML = `
+    <rect width="600" height="200" fill="var(--r-wall)"/>
+    <rect y="160" width="600" height="40" fill="var(--r-floor)"/>
+    <line x1="0" y1="160" x2="600" y2="160" stroke="var(--r-line)" stroke-width="1.5"/>
+    <circle cx="186" cy="26" r="11" fill="#fff" stroke="var(--r-line)" stroke-width="2"/><path d="M186 26 V19 M186 26 L191 29" stroke="var(--r-line)" stroke-width="1.6" stroke-linecap="round"/>
+    <rect x="20" y="12" width="110" height="30" rx="2" fill="#f7f6f1" stroke="var(--r-line)" stroke-width="1.5"/>
+    <text class="room-lbl" x="75" y="32" text-anchor="middle">학사 일정</text>
+    ${desks}
+    <rect id="tDoor" x="538" y="36" width="54" height="124" fill="var(--r-door)" stroke="var(--r-line)" stroke-width="2"/>
+    <circle cx="547" cy="100" r="3" fill="#e7c76a"/>
+    <text class="room-lbl" x="565" y="28" text-anchor="middle">출입문</text>
+    <g id="tStandLayer"></g>`;
+
+  /* 맨 오른쪽(당일 담당) 선생님의 평소 화면: 개인 업무 (경고 때만 빨간 화면으로 바뀜) */
+  const F = 'font-family="IBM Plex Sans KR, sans-serif"';
+  const sx = 400, sy = 36, sw = 120, sh = 70, pcx = sx + sw / 2;
+  const lines = [76, 82, 70, 80, 46].map((lw, i) => `<rect x="${pcx - 41}" y="${sy + 33 + i * 5.5}" width="${lw}" height="1.8" rx=".9" fill="#a3abb5"/>`).join('');
+  $('tmN').innerHTML = `<rect x="${sx}" y="${sy}" width="${sw}" height="${sh}" rx="2" fill="#e6e9ee"/>
+    <rect x="${sx}" y="${sy}" width="${sw}" height="10" rx="2" fill="#2f5fb3"/>
+    <text x="${sx + 4}" y="${sy + 7.2}" font-size="6.4" fill="#fff" ${F}>가정통신문 작성</text>
+    <rect x="${pcx - 46}" y="${sy + 14}" width="92" height="53" fill="#fff" stroke="#c9ced6" stroke-width=".5"/>
+    <text x="${pcx}" y="${sy + 24}" text-anchor="middle" font-size="6.6" font-weight="700" fill="#2b333b" ${F}>현장 체험 학습 안내</text>
+    <text x="${pcx - 41}" y="${sy + 30.5}" font-size="4.6" fill="#6b7480" ${F}>학부모님께</text>
+    ${lines}
+    <rect class="blink" x="${pcx + 6}" y="${sy + 54.5}" width=".9" height="4.5" fill="#2b333b"/>`;
+}
+
+/* ---------- AI 화면 ---------- */
+const cards = [];
+function buildFaces(){
+  const wrap = $('faces');
+  PEOPLE.forEach(p => {
+    const el = document.createElement('div'); el.className = 'fcard';
+    el.innerHTML = `${faceSVG(p)}<div class="fname">${p.name}</div><div class="fbar"><i></i></div><div class="fpct">—</div>`;
+    wrap.appendChild(el);
+    cards.push({el, bar: el.querySelector('.fbar i'), pct: el.querySelector('.fpct')});
+  });
+}
+const ICON_SAFE = '<path d="M12 2 L20 5 V11 C20 16 16.5 20 12 22 C7.5 20 4 16 4 11 V5 Z" fill="currentColor" opacity=".25"/><path d="M12 2 L20 5 V11 C20 16 16.5 20 12 22 C7.5 20 4 16 4 11 V5 Z" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M8.5 12 L11 14.5 L15.8 9.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>';
+const ICON_WARN = '<path d="M12 2.5 L23 21.5 H1 Z" fill="#fff"/><path d="M12 9 V14.5" stroke="#ff4d48" stroke-width="2.4" stroke-linecap="round"/><circle cx="12" cy="18" r="1.4" fill="#ff4d48"/>';
+function setStatus(s){
+  const el = $('status'); el.dataset.s = s;
+  $('stText').textContent = s === 'safe' ? '안전' : '경고';
+  $('stSub').textContent = s === 'safe' ? '평상시' : '확인 필요';
+  $('stIcon').innerHTML = s === 'safe' ? ICON_SAFE : ICON_WARN;
+  $('console').classList.toggle('is-warn', s === 'warn');
+}
+function pipe(k, state, text){ const li = $('p-' + k); li.dataset.state = state; li.querySelector('.p-val').textContent = text; }
+function verdict(v, main, sub){ const el = $('verdict'); el.dataset.v = v; $('vMain').textContent = main; $('vSub').textContent = sub || ''; }
+function setD(k, state, text){ const el = $('d-' + k); el.dataset.state = state; el.querySelector('span').textContent = text; }
+function alertbar(text){ if (text){ $('alertText').textContent = text; $('alertbar').hidden = false; } else $('alertbar').hidden = true; }
+const two = n => String(n).padStart(2, '0');
+const nowStr = () => { const d = new Date(); return `${two(d.getHours())}:${two(d.getMinutes())}:${two(d.getSeconds())}`; };
+function log(msg, kind){
+  const li = document.createElement('li'); if (kind) li.className = kind;
+  li.innerHTML = `<time>${nowStr()}</time><span></span>`; li.querySelector('span').textContent = msg;
+  $('log').prepend(li);
+}
+function feedIdle(html){ $('camView').innerHTML = `<div class="cam-idle">${html}</div>`; }
+function feedShow(p, s, tag){ $('camView').innerHTML = `<div class="cam-face">${faceSVG(p)}</div><div class="bracket" data-s="${s}"></div><div class="cam-tag" data-s="${s}">${tag}</div>`; }
+function feedState(s, tag){ const b = $('camView').querySelector('.bracket'), t = $('camView').querySelector('.cam-tag'); if (b) b.dataset.s = s; if (t){ t.dataset.s = s; t.textContent = tag; } }
+
+async function compare(sims){
+  pipe('compare', 'active', `0 / ${sims.length}`);
+  for (let i = 0; i < sims.length; i++){
+    const c = cards[i]; c.el.classList.add('scan');
+    await tween(230, t => { const v = Math.round(sims[i] * t); c.pct.textContent = v + '%'; c.bar.style.width = v + '%'; });
+    await sleep(60);
+    c.el.classList.remove('scan'); c.el.classList.add(sims[i] >= TH ? 'match' : 'miss');
+    pipe('compare', 'active', `${i + 1} / ${sims.length}`);
+  }
+  pipe('compare', 'done', `${sims.length}명 대조 완료`);
+}
+async function discard(who){
+  pipe('discard', 'active', '처리 중');
+  await sleep(450);
+  setD('store', 'on', '저장 안 함'); await sleep(600);
+  setD('learn', 'on', '학습 안 함'); await sleep(600);
+  const f = $('camView').querySelector('.cam-face'); if (f) f.classList.add('shred');
+  feedState('gone', '얼굴 정보 폐기 중');
+  await sleep(1000);
+  setD('drop', 'on', '폐기 완료');
+  feedIdle('얼굴 정보 폐기됨<br><small>남은 사진·특징값 없음</small>');
+  pipe('discard', 'done', '폐기 완료');
+  log(`${who} 얼굴 정보 폐기 (저장·학습 안 함)`, 'ok');
+}
+
+/* ---------- 실내 동작 ---------- */
+let RG, RT;
+function makeRooms(){
+  RG = { seat: $('gSeat'), rig: $('gRig'), arm: $('gArm'), excl: $('gExcl'), door: $('gDoor'),
+         stand: mkActor($('gStandLayer'), standingSVG(GUARD), 1, true), standX: 200, doorX: 552,
+         monN: $('gmN'), monA: $('gmA'), monIn: $('gmIn'), where: '정문 CAM-1', armIdle: 'arm-write', chip: '관리자: 업무 일지 작성 중' };
+  RT = { seat: $('t2Seat'), rig: null, arm: $('t2Arm'), excl: $('tExcl'), door: $('tDoor'),
+         stand: mkActor($('tStandLayer'), standingSVG(TEACHERS[2]), 1, true), standX: 380, doorX: 565,
+         monN: $('tmN'), monA: $('tmA'), monIn: $('tmIn'), where: '후문 CAM-2', armIdle: 'arm-type', chip: '선생님들: 수업 준비 중' };
+}
+function roomReset(r){
+  r.seat.style.display = ''; r.stand.hide(); r.excl.style.display = 'none';
+  r.arm.setAttribute('class', r.armIdle); if (r.rig) r.rig.removeAttribute('transform');
+  r.monN.style.display = ''; r.monA.style.display = 'none'; r.monIn.textContent = r.where;
+  r.door.setAttribute('fill', 'var(--r-door)');
+}
+function monAlert(r){ r.monN.style.display = 'none'; r.monA.style.display = ''; r.monIn.textContent = r.where; r.excl.style.display = ''; r.arm.setAttribute('class', r.armIdle + ' paused'); }
+async function leaveRoom(r, speed){
+  r.excl.style.display = 'none'; r.seat.style.display = 'none';
+  r.door.setAttribute('fill', 'var(--r-door-open)');
+  r.stand.at(r.standX, 160).show(); r.stand.face(1);
+  await r.stand.walk([[r.doorX, 160]], speed);
+  r.stand.hide(); r.door.setAttribute('fill', 'var(--r-door)');
+}
+async function enterRoom(r){
+  r.door.setAttribute('fill', 'var(--r-door-open)');
+  r.stand.at(r.doorX, 160).show(); r.stand.face(-1);
+  await sleep(250); r.door.setAttribute('fill', 'var(--r-door)');
+  const target = r.rig ? r.standX + 66 : r.standX;
+  if (r.rig) r.rig.setAttribute('transform', 'translate(66,0)');
+  await r.stand.walk([[target, 160]], 140);
+  r.stand.hide(); r.seat.style.display = '';
+}
+async function typeConfirm(r){
+  r.arm.setAttribute('class', 'arm-type');
+  r.monIn.textContent = '> ';
+  for (const ch of '외부인 확인 완료'){ await sleep(140); r.monIn.textContent += ch; }
+  await sleep(500);
+  r.monA.style.display = 'none'; r.monN.style.display = '';
+}
+
+/* ---------- 상태와 화면 전환 ---------- */
+let entrance = 'front', running = false, totalSteps = 0;
+let A, X, G, T, camF, camB;
+function S(n, text){ $('stepNo').textContent = `${n} / ${totalSteps}`; $('stepText').textContent = text; }
+function inChip(t){ $('inChip').textContent = t; }
+
+function applyEntrance(){
+  const f = entrance === 'front';
+  $('mapFront').style.display = f ? '' : 'none'; $('mapBack').style.display = f ? 'none' : '';
+  $('camFront').style.display = f ? '' : 'none'; $('camBack').style.display = f ? 'none' : '';
+  $('roomGuard').style.display = f ? '' : 'none'; $('roomStaff').style.display = f ? 'none' : '';
+  $('outTitle').textContent = f ? '정문 쪽' : '후문 쪽';
+  $('outChip').textContent = f ? '카메라: 정문 기둥' : '카메라: 후문 기둥';
+  $('inTitle').textContent = f ? '관리소 내부' : '교무실 내부';
+  $('camName').textContent = f ? 'CAM-1 · 정문' : 'CAM-2 · 후문';
+  $('pickFront').setAttribute('aria-checked', f); $('pickBack').setAttribute('aria-checked', !f);
+}
+function resetAll(){
+  [A, X, G, T].forEach(a => a.hide());
+  camF.reset(); camB.reset(); clearBubbles();
+  roomReset(RG); roomReset(RT);
+  inChip(entrance === 'front' ? RG.chip : RT.chip);
+  $('inFig').classList.remove('alarm', 'spot');
+  $('staffWin').classList.remove('blink'); $('staffWin').querySelector('rect').setAttribute('fill', 'var(--s-window)');
+  setStatus('safe'); alertbar(null);
+  feedIdle('대기 중<br><small>감지된 사람 없음</small>');
+  ['detect', 'compare', 'judge', 'action', 'discard'].forEach(k => pipe(k, 'idle', '대기'));
+  cards.forEach(c => { c.el.className = 'fcard'; c.pct.textContent = '—'; c.bar.style.width = '0'; });
+  verdict('wait', '판정 대기', '');
+  ['store', 'learn', 'drop'].forEach(k => setD(k, 'idle', '대기'));
+  $('log').innerHTML = '';
+}
+
+/* ---------- 공통 단계 ---------- */
+async function detect(cam, person, face, camLabel){
+  cam.watch(person);
+  feedShow(face, 'scan', '얼굴 감지 · 분석 중');
+  pipe('detect', 'active', '얼굴 1개');
+  log(`${camLabel} 얼굴 1개 감지 → 허가 목록 대조 시작`);
+  await sleep(1400);
+  pipe('detect', 'done', '얼굴 1개');
+}
+async function judgeAuth(cam, roomChip){
+  verdict('ok', '허가된 사람', '학생 3 · 일치도 97%');
+  pipe('judge', 'done', '허가된 사람');
+  pipe('action', 'done', '조치 없음');
+  feedState('ok', '학생 3 · 97% 일치'); cam.mode('ok');
+  log('대조 결과: 학생 3과 일치 (97%) → 허가', 'ok');
+  log('조치 없음 · 상태 유지: 안전');
+  inChip(roomChip);
+}
+async function judgeOut(cam){
+  verdict('bad', '허가 받지 않은 사람', `최고 일치도 38% · 기준 ${TH}% 미만`);
+  pipe('judge', 'bad', '허가 받지 않은 사람');
+  feedState('bad', '미등록 · 최고 38%'); cam.mode('bad');
+  log('대조 결과: 일치하는 얼굴 없음 (최고 38%) → 미허가', 'warn');
+}
+
+/* ---------- 시나리오 ---------- */
+async function frontAuth(){
+  totalSteps = 6;
+  S(1, '허가된 사람(학생 3)이 정문으로 들어옵니다.');
+  A.at(640, 290).show(); await A.walk([[548, 290]], 55);
+  S(2, '정문 카메라가 인물을 바라봅니다.');
+  const w = A.walk([[430, 290], [310, 188]], 30);
+  await detect(camF, A, PEOPLE[2], 'CAM-1(정문)');
+  S(3, 'AI가 허가된 사람 얼굴 목록과 하나씩 대조합니다.');
+  await compare(SIM_AUTH);
+  S(4, '학생 3과 일치(97%) → 허가된 사람이므로 아무 조치도 하지 않습니다.');
+  await judgeAuth(camF, '관리자: 업무 일지 작성 중 · 알림 없음');
+  await sleep(2200);
+  S(5, '방금 인식한 얼굴 정보만 폐기합니다. 허가 목록은 그대로입니다.');
+  await discard('학생 3');
+  camF.unwatch();
+  await w;
+  S(6, '학생 3이 본관으로 들어갑니다. 관리자는 신경 쓰지 않고 하던 일을 계속합니다.');
+  await A.walk([[170, 141], [150, 126]], 45); A.hide();
+}
+
+async function frontOut(){
+  totalSteps = 10;
+  S(1, '허가 받지 않은 사람이 정문으로 들어옵니다.');
+  X.at(640, 290).show(); await X.walk([[548, 290]], 55);
+  S(2, '정문 카메라가 인물을 바라봅니다.');
+  const w = X.walk([[522, 290]], 20);
+  await detect(camF, X, OUTSIDER, 'CAM-1(정문)');
+  S(3, 'AI가 허가된 사람 얼굴 목록과 하나씩 대조합니다.');
+  await compare(SIM_OUT);
+  S(4, '목록에 비슷한 얼굴이 없습니다 → 허가 받지 않은 사람으로 판단합니다.');
+  await judgeOut(camF);
+  await sleep(1800);
+  S(5, "AI 상태를 '안전'에서 '경고'로 바꿉니다.");
+  setStatus('warn'); log('상태 변경: 안전 → 경고', 'warn');
+  await sleep(1400);
+  S(6, '관리소 컴퓨터 화면에 빨간 경고 메시지가 뜹니다.');
+  monAlert(RG); $('inFig').classList.add('alarm'); inChip('관리자: 경고 확인!');
+  alertbar('관리소 PC로 경고를 보냈습니다 · 담당자 확인 대기');
+  pipe('action', 'active', '관리소 PC 경고');
+  log('관리소 PC로 경고 메시지 전송', 'warn');
+  await sleep(2600);
+  S(7, '관리자가 정문으로 나가 인물과 이야기를 나눕니다.');
+  inChip('관리자: 정문으로 이동');
+  await leaveRoom(RG, 150);
+  G.at(476, 318).show(); await G.walk([[468, 292]], 45);
+  await w;
+  camF.unwatch();
+  log('관리자 현장 확인 중');
+  await say(G, '안녕하세요, 어떻게 오셨어요?', 1900);
+  await say(X, '시설 점검하러 온 업체 직원입니다.', 2100);
+  await say(G, '확인했습니다. 본관으로 가세요.', 1900);
+  S(8, '이야기를 마친 관리자가 관리소로 돌아옵니다.');
+  const wx = X.walk([[430, 290], [300, 180], [170, 140], [150, 126]], 44);
+  await G.walk([[476, 318]], 45); G.hide();
+  inChip('관리자: 관리소 복귀');
+  await enterRoom(RG);
+  S(9, "관리자가 키보드로 확인 내용을 입력하면 '경고'가 풀리고 '안전'으로 돌아갑니다.");
+  inChip('관리자: 확인 내용 입력 중');
+  await typeConfirm(RG);
+  setStatus('safe'); alertbar(null); $('inFig').classList.remove('alarm');
+  pipe('action', 'done', '관리자 확인 완료');
+  log('관리자 확인 입력 → 상태 변경: 경고 → 안전', 'ok');
+  inChip('관리자: 하던 일로 복귀');
+  await sleep(700);
+  RG.rig.removeAttribute('transform'); RG.arm.setAttribute('class', 'arm-write');
+  await sleep(600);
+  S(10, '외부인의 얼굴 정보는 저장도 학습도 하지 않고 폐기합니다.');
+  await discard('외부인');
+  await wx; X.hide();
+}
+
+async function backAuth(){
+  totalSteps = 6;
+  S(1, '허가된 사람(학생 3)이 후문으로 들어옵니다.');
+  A.at(-30, 200).show(); await A.walk([[138, 200]], 55);
+  S(2, '후문 카메라가 인물을 바라봅니다.');
+  const w = A.walk([[330, 200]], 30);
+  await detect(camB, A, PEOPLE[2], 'CAM-2(후문)');
+  S(3, 'AI가 허가된 사람 얼굴 목록과 하나씩 대조합니다.');
+  await compare(SIM_AUTH);
+  S(4, '학생 3과 일치(97%) → 허가된 사람이므로 아무 조치도 하지 않습니다.');
+  await judgeAuth(camB, '선생님들: 수업 준비 중 · 알림 없음');
+  await sleep(2200);
+  S(5, '방금 인식한 얼굴 정보만 폐기합니다. 허가 목록은 그대로입니다.');
+  await discard('학생 3');
+  camB.unwatch();
+  await w;
+  S(6, '학생 3이 학교 건물로 들어갑니다. 교무실 선생님들은 하던 일을 계속합니다.');
+  await A.walk([[468, 200]], 45); A.hide();
+}
+
+async function backOut(){
+  totalSteps = 12;
+  S(1, '허가 받지 않은 사람이 후문으로 들어옵니다.');
+  X.at(-30, 200).show(); await X.walk([[138, 200]], 55);
+  S(2, '후문 카메라가 인물을 바라봅니다.');
+  const w = X.walk([[326, 200]], 15.5);
+  await detect(camB, X, OUTSIDER, 'CAM-2(후문)');
+  S(3, 'AI가 허가된 사람 얼굴 목록과 하나씩 대조합니다.');
+  await compare(SIM_OUT);
+  S(4, '목록에 비슷한 얼굴이 없습니다 → 허가 받지 않은 사람으로 판단합니다.');
+  await judgeOut(camB);
+  await sleep(1500);
+  S(5, "AI 상태를 '안전'에서 '경고'로 바꿉니다.");
+  setStatus('warn'); log('상태 변경: 안전 → 경고', 'warn');
+  await sleep(1200);
+  S(6, '교무실 안: 여러 선생님들이 각자 일을 하고 있습니다.');
+  const fig = $('inFig'); fig.classList.remove('spot'); void fig.offsetWidth; fig.classList.add('spot');
+  $('staffWin').querySelector('rect').setAttribute('fill', '#f2b8b5'); $('staffWin').classList.add('blink');
+  inChip('선생님들: 수업 준비 중');
+  await sleep(1700);
+  S(7, '선생님 한 분의 컴퓨터 화면에 빨간 경고 메시지가 뜹니다.');
+  monAlert(RT); fig.classList.add('alarm'); inChip('선생님: 경고 확인!');
+  alertbar('교무실 PC로 경고를 보냈습니다 · 담당자 확인 대기');
+  pipe('action', 'active', '교무실 PC 경고');
+  log('교무실 PC로 경고 메시지 전송', 'warn');
+  await sleep(2200);
+  S(8, '선생님이 뛰어나가 확인하러 갑니다.');
+  inChip('선생님: 후문 쪽으로 이동');
+  await leaveRoom(RT, 230);
+  T.at(468, 200).show(); await T.walk([[378, 200]], 125);
+  await w;
+  S(9, '학교 안으로 들어가던 외부인이 선생님에게 막힙니다.');
+  camB.unwatch();
+  log('선생님 현장 확인 중');
+  await say(T, '잠시만요! 어떻게 오셨어요?', 1900);
+  await say(X, '학부모예요. 아이 준비물을 가져왔어요.', 2200);
+  await say(T, '확인했습니다. 같이 들어가시죠.', 1900);
+  S(10, '선생님과 외부인이 함께 학교 건물로 들어갑니다.');
+  await Promise.all([T.walk([[378, 192], [468, 192]], 45), X.walk([[326, 210], [468, 210]], 45)]);
+  T.hide(); X.hide();
+  $('staffWin').classList.remove('blink');
+  S(11, "선생님이 교무실로 돌아와 확인 내용을 입력하면 '경고'가 풀리고 '안전'이 됩니다.");
+  inChip('선생님: 교무실 복귀');
+  await enterRoom(RT);
+  inChip('선생님: 확인 내용 입력 중');
+  await typeConfirm(RT);
+  setStatus('safe'); alertbar(null); fig.classList.remove('alarm');
+  $('staffWin').querySelector('rect').setAttribute('fill', 'var(--s-window)');
+  pipe('action', 'done', '선생님 확인 완료');
+  log('선생님 확인 입력 → 상태 변경: 경고 → 안전', 'ok');
+  inChip('선생님들: 수업 준비 중');
+  await sleep(1200);
+  S(12, '외부인의 얼굴 정보는 저장도 학습도 하지 않고 폐기합니다.');
+  await discard('외부인');
+}
+
+const SCENARIOS = { front: { auth: frontAuth, out: frontOut }, back: { auth: backAuth, out: backOut } };
+
+/* ---------- 버튼 (실행 중에는 잠금) ---------- */
+const lockables = () => [$('btnAuth'), $('btnOut'), $('pickFront'), $('pickBack')];
+function lock(on, active){
+  lockables().forEach(b => { b.disabled = on; b.classList.remove('is-running'); });
+  if (on && active) active.classList.add('is-running');
+}
+async function run(kind, btn){
+  if (running) return;
+  running = true; lock(true, btn);
+  resetAll();
+  log(`시뮬레이션 시작 · ${entrance === 'front' ? '정문' : '후문'} · ${kind === 'auth' ? '허가된 사람' : '허가 받지 않은 사람'}`);
+  try { await SCENARIOS[entrance][kind](); $('stepNo').textContent = '완료'; }
+  catch (e) { console.error(e); $('stepText').textContent = '실행 중 문제가 생겼습니다. 버튼을 다시 눌러 주세요.'; }
+  finally { running = false; lock(false); }
+}
+function pick(e){
+  if (running || entrance === e) return;
+  entrance = e; applyEntrance(); resetAll();
+  $('stepNo').textContent = '대기';
+  $('stepText').textContent = `${e === 'front' ? '정문' : '후문'}을 골랐습니다. 인물 버튼을 누르면 끝까지 자동으로 실행됩니다.`;
+  log(`시스템 대기 · ${e === 'front' ? 'CAM-1 정문' : 'CAM-2 후문'} 감시 중`);
+}
+
+/* ---------- 시작 ---------- */
+function init(){
+  buildRooms(); buildFaces(); makeRooms();
+  const layer = $('actors');
+  A = mkActor(layer, figSVG(FIG.auth), 1.25);
+  X = mkActor(layer, figSVG(FIG.out), 1.25);
+  G = mkActor(layer, figSVG(FIG.guard), 1.25);
+  T = mkActor(layer, figSVG(FIG.teacher), 1.25);
+  camF = new Cam($('camFrontRig'), 551, 255, 20);
+  camB = new Cam($('camBackRig'), 131, 138, 160);
+  applyEntrance(); resetAll();
+  log('시스템 대기 · CAM-1 정문 감시 중');
+  $('btnAuth').addEventListener('click', e => run('auth', e.currentTarget));
+  $('btnOut').addEventListener('click', e => run('out', e.currentTarget));
+  $('pickFront').addEventListener('click', () => pick('front'));
+  $('pickBack').addEventListener('click', () => pick('back'));
+  const tick = () => { $('clock').textContent = `시각 인공지능 얼굴 대조 · ${nowStr()}`; };
+  tick(); setInterval(tick, 1000);
+  let last = performance.now();
+  const loop = now => {
+    const dt = Math.min(0.1, (now - last) / 1000); last = now;
+    for (const a of actors){ if (a.walking) a.phase += dt * SPEED * 11; if (a.visible) a.render(); }
+    camF.update(); camB.update();
+    for (const b of bubbles) b.update();
+    requestAnimationFrame(loop);
+  };
+  requestAnimationFrame(loop);
+}
+init();
+})();
+</script>
+
+</body>
+</html>
